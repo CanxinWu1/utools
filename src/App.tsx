@@ -6,6 +6,15 @@ import { roleFilters, tools } from "./tools/registry";
 import type { ToolDefinition } from "./tools/types";
 
 const HOTKEY_LABEL = "Cmd/Ctrl + Shift + Space";
+const categoryLabels: Record<ToolDefinition["category"], string> = {
+  developer: "开发",
+  request: "请求",
+  encoding: "编码",
+  data: "数据",
+  testing: "测试",
+  writing: "文本",
+  design: "设计",
+};
 
 function matchesTool(tool: ToolDefinition, query: string) {
   const haystack = [tool.title, tool.description, tool.category, ...tool.roles, ...tool.keywords]
@@ -44,7 +53,9 @@ function App() {
   }, [activeRole, favorites, query, recents]);
 
   const activeTool = tools.find((tool) => tool.id === activeToolId) ?? tools[0];
+  const activeRoleInfo = roleFilters.find((role) => role.id === activeRole) ?? roleFilters[0];
   const ActivePanel = activeTool.component;
+  const favoriteTools = tools.filter((tool) => favorites.includes(tool.id));
   const recentTools = recents
     .map((id) => tools.find((tool) => tool.id === id))
     .filter((tool): tool is ToolDefinition => Boolean(tool))
@@ -60,13 +71,14 @@ function App() {
     <main className="app-shell">
       <aside className="sidebar">
         <div className="brand">
-          <span className="brand-mark">Q</span>
+          <span className="brand-mark">QD</span>
           <div>
             <h1>QuickDesk</h1>
-            <p>全岗位快捷工具</p>
+            <p>{HOTKEY_LABEL}</p>
           </div>
         </div>
 
+        <div className="sidebar-label">岗位</div>
         <nav className="role-nav" aria-label="岗位分类">
           {roleFilters.map((role) => (
             <button
@@ -101,8 +113,11 @@ function App() {
 
       <section className="workspace">
         <header className="topbar">
+          <div className="workspace-title">
+            <span>{view === "home" ? "工具导航" : categoryLabels[activeTool.category]}</span>
+            <strong>{view === "home" ? activeRoleInfo.title : activeTool.title}</strong>
+          </div>
           <label className="command-search">
-            <span>搜索</span>
             <input
               ref={searchRef}
               value={query}
@@ -114,17 +129,30 @@ function App() {
           <button type="button" className="ghost-button" onClick={toggleTheme}>
             {theme === "light" ? "深色" : "浅色"}
           </button>
-          <div className="hotkey">{HOTKEY_LABEL}</div>
         </header>
 
         {view === "home" ? (
-          <section className="tool-board">
-            <div className="section-heading">
+          <section className="home-page">
+            <div className="launch-summary">
               <div>
-                <h2>工具导航</h2>
-                <p>按岗位筛选或搜索工具，点击后进入独立使用页面。</p>
+                <span className="eyebrow">Command center</span>
+                <h2>选择一个工具开始</h2>
+                <p>按岗位筛选、搜索关键词，打开后进入独立使用页面。</p>
               </div>
-              <span>{visibleTools.length} 个工具</span>
+              <div className="summary-metrics" aria-label="工具概览">
+                <span>
+                  <strong>{visibleTools.length}</strong>
+                  <small>当前工具</small>
+                </span>
+                <span>
+                  <strong>{favoriteTools.length}</strong>
+                  <small>收藏</small>
+                </span>
+                <span>
+                  <strong>{recentTools.length}</strong>
+                  <small>最近</small>
+                </span>
+              </div>
             </div>
 
             {visibleTools.length ? (
@@ -133,8 +161,11 @@ function App() {
                   <article key={tool.id} className={activeTool.id === tool.id ? "tool-card selected" : "tool-card"}>
                     <button type="button" className="tool-open" onClick={() => openTool(tool.id)}>
                       <span className={`tool-icon category-${tool.category}`}>{tool.title.slice(0, 1)}</span>
-                      <strong>{tool.title}</strong>
-                      <small>{tool.description}</small>
+                      <span className="tool-copy">
+                        <strong>{tool.title}</strong>
+                        <small>{tool.description}</small>
+                        <em>{categoryLabels[tool.category]} · {tool.roles.length} 个岗位</em>
+                      </span>
                     </button>
                     <button
                       type="button"
@@ -158,7 +189,7 @@ function App() {
           <section className="tool-page">
             <div className="tool-page-bar">
               <button type="button" onClick={() => setView("home")}>
-                返回工具导航
+                返回
               </button>
               <div>
                 <strong>{activeTool.title}</strong>
