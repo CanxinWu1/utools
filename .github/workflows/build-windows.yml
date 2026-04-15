@@ -44,6 +44,14 @@ jobs:
 
   build-macos:
     runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            arch: apple-silicon
+          - target: x86_64-apple-darwin
+            arch: intel
 
     steps:
       - name: Checkout
@@ -63,18 +71,18 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-apple-darwin
+          targets: ${{ matrix.target }}
 
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
 
       - name: Build Tauri macOS app
-        run: pnpm tauri build --target aarch64-apple-darwin
+        run: pnpm tauri build --target ${{ matrix.target }}
 
       - name: Upload macOS bundles
         uses: actions/upload-artifact@v4
         with:
-          name: quickdesk-macos-aarch64
+          name: swiftbox-macos-${{ matrix.arch }}
           path: |
-            src-tauri/target/aarch64-apple-darwin/release/bundle/macos/*.app
-            src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
+            src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg
+            src-tauri/target/${{ matrix.target }}/release/bundle/macos/*.app
