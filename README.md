@@ -9,7 +9,7 @@ GitHub Actions publishes two macOS artifacts:
 - `swiftbox-macos-apple-silicon` for M1/M2/M3/M4 Macs.
 - `swiftbox-macos-intel` for Intel Macs.
 
-Download the matching `.dmg` from the artifact. If macOS blocks the unsigned app, right-click SwiftBox and choose **Open** once.
+Download the matching `.dmg` from the artifact. SwiftBox uses ad-hoc signing for CI builds, so macOS may still ask you to approve it once in Privacy & Security or by right-clicking SwiftBox and choosing **Open**.
 
 ## Recommended IDE Setup
 
