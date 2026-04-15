@@ -73,7 +73,7 @@ function App() {
         <div className="brand">
           <span className="brand-mark">QD</span>
           <div>
-            <h1>QuickDesk</h1>
+            <h1>SwiftBox</h1>
             <p>{HOTKEY_LABEL}</p>
           </div>
         </div>

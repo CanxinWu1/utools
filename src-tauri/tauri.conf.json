@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "tauri-test-app",
+  "productName": "SwiftBox",
   "version": "0.1.0",
-  "identifier": "com.wucanxin.tauri-test-app",
+  "identifier": "com.wucanxin.swiftbox",
   "build": {
     "beforeDevCommand": "pnpm dev",
     "devUrl": "http://localhost:1420",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "QuickDesk",
+        "title": "SwiftBox",
         "width": 1080,
         "height": 720,
         "minWidth": 860,

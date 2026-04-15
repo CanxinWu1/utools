@@ -1,7 +1,7 @@
 [package]
-name = "tauri-test-app"
+name = "swiftbox"
 version = "0.1.0"
-description = "A Tauri App"
+description = "A desktop toolbox for fast role-based utilities"
 authors = ["you"]
 edition = "2021"
 

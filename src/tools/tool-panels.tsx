@@ -264,7 +264,7 @@ export function ColorTool() {
 }
 
 export function JsonTool() {
-  const [input, setInput] = useState('{"name":"QuickDesk","roles":["frontend","backend"]}');
+  const [input, setInput] = useState('{"name":"SwiftBox","roles":["frontend","backend"]}');
   const [output, setOutput] = useState("");
 
   function transform(mode: "format" | "minify") {
@@ -292,7 +292,7 @@ export function JsonTool() {
 }
 
 export function Base64Tool() {
-  const [input, setInput] = useState("QuickDesk 工具箱");
+  const [input, setInput] = useState("SwiftBox 工具箱");
   const [output, setOutput] = useState("");
 
   return (
@@ -429,7 +429,7 @@ export function JwtTool() {
 export function RegexTool() {
   const [pattern, setPattern] = useState("\\b\\w+Desk\\b");
   const [flags, setFlags] = useState("gi");
-  const [text, setText] = useState("QuickDesk 是一个桌面工具箱。quickdesk tools.");
+  const [text, setText] = useState("SwiftBox 是一个桌面工具箱。swiftbox tools.");
   const output = useMemo(() => {
     try {
       const normalizedFlags = flags.includes("g") ? flags : `${flags}g`;

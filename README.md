@@ -1,6 +1,6 @@
-# Tauri + React + Typescript
+# SwiftBox
 
-This template should help get you started developing with Tauri, React and Typescript in Vite.
+SwiftBox is a Tauri desktop toolbox for role-based quick utilities, including developer, QA, product, design, and office workflows.
 
 ## Recommended IDE Setup
 
