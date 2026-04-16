@@ -93,6 +93,11 @@ function App() {
     openTool(visibleTools[0].id);
   }
 
+  function selectRole(roleId: (typeof roleFilters)[number]["id"]) {
+    setActiveRole(roleId);
+    setView("home");
+  }
+
   return (
     <main className="app-shell">
       <aside className="sidebar">
@@ -111,7 +116,7 @@ function App() {
               key={role.id}
               type="button"
               className={activeRole === role.id ? "active" : ""}
-              onClick={() => setActiveRole(role.id)}
+              onClick={() => selectRole(role.id)}
             >
               <span>{role.title}</span>
               <small>{role.hint}</small>

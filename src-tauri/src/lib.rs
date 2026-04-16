@@ -4,10 +4,12 @@ use std::time::Instant;
 
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use serde::{Deserialize, Serialize};
-use tauri::{Emitter, Manager};
+use tauri::{menu::MenuBuilder, tray::TrayIconBuilder, Emitter, Manager, WindowEvent};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
 const QUICK_DESK_SHORTCUT: &str = "CommandOrControl+Shift+Space";
+const TRAY_TOGGLE_ID: &str = "toggle-window";
+const TRAY_QUIT_ID: &str = "quit-app";
 
 #[derive(Debug, Deserialize)]
 struct HttpRequest {
@@ -115,6 +117,31 @@ fn show_or_hide_main_window(app: &tauri::AppHandle) {
     let _ = window.emit("focus-search", ());
 }
 
+fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
+    let menu = MenuBuilder::new(app)
+        .text(TRAY_TOGGLE_ID, "显示/隐藏 SwiftBox")
+        .separator()
+        .text(TRAY_QUIT_ID, "退出")
+        .build()?;
+
+    let mut tray = TrayIconBuilder::with_id("swiftbox-tray")
+        .tooltip("SwiftBox")
+        .menu(&menu)
+        .show_menu_on_left_click(false)
+        .on_menu_event(|app, event| match event.id().as_ref() {
+            TRAY_TOGGLE_ID => show_or_hide_main_window(app),
+            TRAY_QUIT_ID => app.exit(0),
+            _ => {}
+        });
+
+    if let Some(icon) = app.default_window_icon() {
+        tray = tray.icon(icon.clone());
+    }
+
+    tray.build(app)?;
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -132,9 +159,17 @@ pub fn run() {
                 .build(),
         )
         .setup(|app| {
+            setup_tray(app)?;
+
             let shortcut = Shortcut::from_str(QUICK_DESK_SHORTCUT)?;
             app.global_shortcut().register(shortcut)?;
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                let _ = window.hide();
+            }
         })
         .invoke_handler(tauri::generate_handler![send_http_request])
         .run(tauri::generate_context!())
