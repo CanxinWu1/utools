@@ -41,6 +41,27 @@ function App() {
     };
   }, []);
 
+  useEffect(() => {
+    function handleShortcut(event: KeyboardEvent) {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        setView("home");
+        window.setTimeout(() => searchRef.current?.focus(), 30);
+      }
+      if (event.key === "Escape") {
+        if (view === "tool") {
+          setView("home");
+          window.setTimeout(() => searchRef.current?.focus(), 30);
+        } else if (query) {
+          setQuery("");
+        }
+      }
+    }
+
+    window.addEventListener("keydown", handleShortcut);
+    return () => window.removeEventListener("keydown", handleShortcut);
+  }, [query, view]);
+
   const visibleTools = useMemo(() => {
     return tools
       .filter((tool) => activeRole === "all" || tool.roles.includes(activeRole))
@@ -65,6 +86,11 @@ function App() {
     setActiveToolId(toolId);
     touchRecent(toolId);
     setView("tool");
+  }
+
+  function openFirstVisibleTool() {
+    if (!visibleTools.length) return;
+    openTool(visibleTools[0].id);
   }
 
   return (
@@ -122,6 +148,9 @@ function App() {
               ref={searchRef}
               value={query}
               onChange={(event) => setQuery(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") openFirstVisibleTool();
+              }}
               placeholder="搜索工具、岗位或关键词，例如 Postman、取色器、时间戳"
             />
             <kbd>Enter</kbd>
@@ -155,6 +184,31 @@ function App() {
               </div>
             </div>
 
+            {(favoriteTools.length || recentTools.length) ? (
+              <div className="quick-lanes">
+                {favoriteTools.length ? (
+                  <section>
+                    <strong>收藏</strong>
+                    <div className="quick-chip-row">
+                      {favoriteTools.slice(0, 6).map((tool) => (
+                        <button key={tool.id} type="button" onClick={() => openTool(tool.id)}>{tool.title}</button>
+                      ))}
+                    </div>
+                  </section>
+                ) : null}
+                {recentTools.length ? (
+                  <section>
+                    <strong>最近</strong>
+                    <div className="quick-chip-row">
+                      {recentTools.map((tool) => (
+                        <button key={tool.id} type="button" onClick={() => openTool(tool.id)}>{tool.title}</button>
+                      ))}
+                    </div>
+                  </section>
+                ) : null}
+              </div>
+            ) : null}
+
             {visibleTools.length ? (
               <div className="tool-grid">
                 {visibleTools.map((tool) => (
@@ -165,6 +219,7 @@ function App() {
                         <strong>{tool.title}</strong>
                         <small>{tool.description}</small>
                         <em>{categoryLabels[tool.category]} · {tool.roles.length} 个岗位</em>
+                        <span className="keyword-line">{tool.keywords.slice(0, 3).join(" / ")}</span>
                       </span>
                     </button>
                     <button
@@ -195,6 +250,11 @@ function App() {
                 <strong>{activeTool.title}</strong>
                 <span>{activeTool.description}</span>
               </div>
+              <select value={activeTool.id} onChange={(event) => openTool(event.target.value)} aria-label="快速切换工具">
+                {tools.map((tool) => (
+                  <option key={tool.id} value={tool.id}>{tool.title}</option>
+                ))}
+              </select>
               <button
                 type="button"
                 className={favorites.includes(activeTool.id) ? "favorite-action on" : "favorite-action"}

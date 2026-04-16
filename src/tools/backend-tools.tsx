@@ -1,12 +1,30 @@
 import { useEffect, useMemo, useState, type ChangeEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { copyText, Field, MetricStrip, Output, StatusPill, ToolShell } from "./shared";
+import {
+  CopyButton,
+  copyText,
+  Field,
+  InlineError,
+  KeyValueEditor,
+  MetricStrip,
+  Output,
+  ResultViewer,
+  StatusBadge,
+  ToolPanel,
+  ToolShell,
+  ToolTabs,
+  ToolWorkspace,
+  type KeyValueItem,
+} from "./ui";
 
 type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 type HashAlgorithm = "SHA-1" | "SHA-256" | "SHA-384" | "SHA-512";
-type KeyValueRow = { id: string; key: string; value: string; enabled: boolean };
+type KeyValueRow = KeyValueItem;
 type HeaderInputMode = "table" | "json" | "raw";
-type BodyInputMode = "json" | "table" | "raw";
+type BodyInputMode = "json" | "table" | "urlencoded" | "raw";
+type RequestTab = "params" | "headers" | "body" | "curl";
+type ResponseTab = "body" | "headers" | "info";
+type JwtTab = "payload" | "header" | "claims";
 
 interface HttpResponse {
   status: number;
@@ -51,8 +69,45 @@ function rowsToObject(rows: KeyValueRow[]) {
   );
 }
 
+function rowsToFormUrlEncoded(rows: KeyValueRow[]) {
+  const params = new URLSearchParams();
+  rows
+    .filter((row) => row.enabled && row.key.trim())
+    .forEach((row) => params.append(row.key.trim(), row.value));
+  return params.toString();
+}
+
+function formBodyToRows(body: string) {
+  try {
+    return Array.from(new URLSearchParams(body).entries()).map(([key, value]) => createRow(key, value));
+  } catch {
+    return [];
+  }
+}
+
 function objectToRows(value: Record<string, unknown>) {
   return Object.entries(value).map(([key, item]) => createRow(key, typeof item === "string" ? item : JSON.stringify(item)));
+}
+
+function rowsFromSearchParams(inputUrl: string) {
+  try {
+    const parsedUrl = new URL(inputUrl);
+    return Array.from(parsedUrl.searchParams.entries()).map(([key, value]) => createRow(key, value));
+  } catch {
+    return [];
+  }
+}
+
+function buildUrlWithParams(inputUrl: string, rows: KeyValueRow[]) {
+  const activeRows = rows.filter((row) => row.enabled && row.key.trim());
+  if (!activeRows.length) return inputUrl;
+  try {
+    const parsedUrl = new URL(inputUrl);
+    activeRows.forEach((row) => parsedUrl.searchParams.set(row.key.trim(), row.value));
+    return parsedUrl.toString();
+  } catch {
+    return inputUrl;
+  }
 }
 
 function parseJsonObject(input: string) {
@@ -83,6 +138,10 @@ function parseJwtSegment(segment: string) {
 
 function bufferToHex(buffer: ArrayBuffer) {
   return Array.from(new Uint8Array(buffer), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function formatJwtTime(value?: number) {
+  return typeof value === "number" ? new Date(value * 1000).toLocaleString() : "-";
 }
 
 function describeCronField(value: string, unit: string) {
@@ -185,6 +244,9 @@ function parseCurl(input: string): { method: HttpMethod; url: string; headers: K
 export function HttpTool() {
   const [method, setMethod] = useState<HttpMethod>("GET");
   const [url, setUrl] = useState("https://httpbin.org/get");
+  const [requestTab, setRequestTab] = useState<RequestTab>("params");
+  const [responseTab, setResponseTab] = useState<ResponseTab>("body");
+  const [paramRows, setParamRows] = useState<KeyValueRow[]>([]);
   const [headerMode, setHeaderMode] = useState<HeaderInputMode>("table");
   const [headerRows, setHeaderRows] = useState<KeyValueRow[]>([createRow("Accept", "application/json")]);
   const [headerJson, setHeaderJson] = useState('{"Accept":"application/json"}');
@@ -197,6 +259,7 @@ export function HttpTool() {
   const [response, setResponse] = useState<HttpResponse | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const effectiveUrl = useMemo(() => buildUrlWithParams(url, paramRows), [paramRows, url]);
   const effectiveHeaders = useMemo(() => {
     try {
       if (headerMode === "table") return rowsToHeaders(headerRows);
@@ -209,6 +272,7 @@ export function HttpTool() {
   const effectiveBody = useMemo(() => {
     try {
       if (bodyMode === "table") return JSON.stringify(rowsToObject(bodyRows), null, 2);
+      if (bodyMode === "urlencoded") return rowsToFormUrlEncoded(bodyRows);
       if (bodyMode === "json") return bodyJson.trim() ? JSON.stringify(JSON.parse(bodyJson), null, 2) : "";
       return rawBody;
     } catch {
@@ -234,11 +298,11 @@ export function HttpTool() {
     }
   }, [bodyJson, bodyMode]);
   const headerState = useMemo(() => parseHeaders(effectiveHeaders), [effectiveHeaders]);
-  const canSend = /^https?:\/\//i.test(url.trim()) && headerState.invalid.length === 0 && !headerJsonError && !bodyJsonError;
+  const canSend = /^https?:\/\//i.test(effectiveUrl.trim()) && headerState.invalid.length === 0 && !headerJsonError && !bodyJsonError;
   const responseBody = response ? prettyBody(response.body, response.headers) : "";
 
   async function sendRequest(requestOverride?: { method: HttpMethod; url: string; headers: string; body: string }) {
-    const request = requestOverride ?? { method, url, headers: effectiveHeaders, body: effectiveBody };
+    const request = requestOverride ?? { method, url: effectiveUrl, headers: effectiveHeaders, body: effectiveBody };
     if (!/^https?:\/\//i.test(request.url.trim()) || parseHeaders(request.headers).invalid.length) return;
     setLoading(true);
     setError("");
@@ -255,19 +319,12 @@ export function HttpTool() {
     }
   }
 
-  function updateHeaderRow(id: string, patch: Partial<KeyValueRow>) {
-    setHeaderRows((rows) => rows.map((row) => (row.id === id ? { ...row, ...patch } : row)));
-  }
-
-  function updateBodyRow(id: string, patch: Partial<KeyValueRow>) {
-    setBodyRows((rows) => rows.map((row) => (row.id === id ? { ...row, ...patch } : row)));
-  }
-
   function applyCurl(sendAfterParse = false) {
     try {
       const parsed = parseCurl(curlInput);
       setMethod(parsed.method);
       setUrl(parsed.url);
+      setParamRows(rowsFromSearchParams(parsed.url));
       setHeaderMode("table");
       setHeaderRows(parsed.headers);
       setRawHeaders(rowsToHeaders(parsed.headers));
@@ -278,8 +335,14 @@ export function HttpTool() {
           setBodyMode("json");
           setBodyJson(JSON.stringify(JSON.parse(parsed.body), null, 2));
         } catch {
-          setBodyMode("raw");
-          setRawBody(parsed.body);
+          const formRows = formBodyToRows(parsed.body);
+          if (formRows.length) {
+            setBodyMode("urlencoded");
+            setBodyRows(formRows);
+          } else {
+            setBodyMode("raw");
+            setRawBody(parsed.body);
+          }
         }
       }
       setError("");
@@ -297,10 +360,31 @@ export function HttpTool() {
   }
 
   const activeHeaderCount = Object.keys(headerState.headers).length;
+  const activeParamCount = paramRows.filter((row) => row.enabled && row.key.trim()).length;
   const bodySize = effectiveBody.length;
+  const responseInfo = response
+    ? [
+        `状态: ${response.status} ${response.status_text}`,
+        `耗时: ${response.elapsed_ms} ms`,
+        `响应头: ${Object.keys(response.headers).length}`,
+        `大小: ${response.body.length} chars`,
+      ].join("\n")
+    : "";
 
   return (
-    <ToolShell title="HTTP 请求" note="轻量 Postman：请求不入库，响应自动识别 JSON。">
+    <ToolWorkspace
+      title="HTTP 请求"
+      description="轻量 Postman：请求不入库，响应自动识别 JSON。"
+      actions={<CopyButton value={buildCurl(method, effectiveUrl, effectiveHeaders, effectiveBody)}>复制 cURL</CopyButton>}
+      meta={
+        <>
+          <StatusBadge tone={canSend ? "success" : "danger"}>{canSend ? "Ready" : "Check request"}</StatusBadge>
+          <span>{activeParamCount} Params</span>
+          <span>{activeHeaderCount} Headers</span>
+          <span>{bodySize} Body chars</span>
+        </>
+      }
+    >
       <div className="http-tool">
         <section className="http-composer">
           <div className="http-request-line">
@@ -314,64 +398,47 @@ export function HttpTool() {
               {loading ? "发送中" : "发送请求"}
             </button>
           </div>
-          <div className="http-meta-row">
-            <StatusPill tone={canSend ? "success" : "danger"}>{canSend ? "Ready" : "Check request"}</StatusPill>
-            <span>{activeHeaderCount} Headers</span>
-            <span>{bodySize} Body chars</span>
-            <button type="button" onClick={() => copyText(buildCurl(method, url, effectiveHeaders, effectiveBody))}>复制 cURL</button>
-          </div>
+          {effectiveUrl !== url ? <div className="http-url-preview">最终 URL：{effectiveUrl}</div> : null}
         </section>
 
-        <section className="http-import">
-          <div className="http-import-head">
-            <div>
-              <strong>cURL 导入</strong>
-              <span>粘贴命令后可解析到表单，或直接发起请求。</span>
-            </div>
-            <div className="button-row">
-              <button type="button" onClick={() => applyCurl(false)}>解析</button>
-              <button type="button" onClick={() => applyCurl(true)}>解析并发送</button>
-            </div>
-          </div>
-          <textarea className="curl-input" value={curlInput} onChange={(event) => setCurlInput(event.target.value)} spellCheck={false} />
-        </section>
+        <ToolPanel
+          title="请求配置"
+          description="Params、Headers、Body、cURL 集中在一个区域，切换时不会丢内容。"
+          action={
+            <ToolTabs
+              active={requestTab}
+              onChange={(value) => setRequestTab(value as RequestTab)}
+              tabs={[
+                { id: "params", label: "Params" },
+                { id: "headers", label: "Headers" },
+                { id: "body", label: "Body" },
+                { id: "curl", label: "cURL" },
+              ]}
+            />
+          }
+        >
+          {requestTab === "params" ? (
+            <KeyValueEditor
+              rows={paramRows}
+              onChange={setParamRows}
+              onAdd={() => createRow()}
+              addLabel="添加参数"
+            />
+          ) : null}
 
-        <div className="http-config-grid">
-          <section className="http-config-panel">
-            <div className="http-panel-head">
-              <div>
-                <strong>Headers</strong>
-                <span>请求头会被转换为标准 key: value 格式。</span>
-              </div>
-              <div className="segmented-tabs">
-                {[
-                  ["table", "表格"],
-                  ["json", "JSON"],
-                  ["raw", "Raw"],
-                ].map(([value, label]) => (
-                  <button
-                    key={value}
-                    type="button"
-                    className={headerMode === value ? "active" : ""}
-                    onClick={() => setHeaderMode(value as HeaderInputMode)}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-            </div>
+          {requestTab === "headers" ? (
+            <div className="http-tab-stack">
+              <ToolTabs
+                active={headerMode}
+                onChange={(value) => setHeaderMode(value as HeaderInputMode)}
+                tabs={[
+                  { id: "table", label: "表格" },
+                  { id: "json", label: "JSON" },
+                  { id: "raw", label: "Raw" },
+                ]}
+              />
           {headerMode === "table" ? (
-            <div className="kv-editor">
-              {headerRows.map((row) => (
-                <div key={row.id} className="kv-row">
-                  <input type="checkbox" checked={row.enabled} onChange={(event) => updateHeaderRow(row.id, { enabled: event.target.checked })} />
-                  <input value={row.key} onChange={(event) => updateHeaderRow(row.id, { key: event.target.value })} placeholder="Key" />
-                  <input value={row.value} onChange={(event) => updateHeaderRow(row.id, { value: event.target.value })} placeholder="Value" />
-                  <button type="button" onClick={() => setHeaderRows((rows) => rows.filter((item) => item.id !== row.id))}>删除</button>
-                </div>
-              ))}
-              <button type="button" onClick={() => setHeaderRows((rows) => [...rows, createRow()])}>添加 Header</button>
-            </div>
+            <KeyValueEditor rows={headerRows} onChange={setHeaderRows} onAdd={() => createRow()} addLabel="添加 Header" />
           ) : null}
           {headerMode === "json" ? (
             <Field label="JSON Headers">
@@ -383,47 +450,33 @@ export function HttpTool() {
               <textarea value={rawHeaders} onChange={(event) => setRawHeaders(event.target.value)} spellCheck={false} />
             </Field>
           ) : null}
-          </section>
-
-          <section className="http-config-panel">
-            <div className="http-panel-head">
-              <div>
-                <strong>Body</strong>
-                <span>JSON 和表格都会在发送前规范化。</span>
-              </div>
-              <div className="segmented-tabs">
-                {[
-                  ["json", "JSON"],
-                  ["table", "表格"],
-                  ["raw", "Raw"],
-                ].map(([value, label]) => (
-                  <button
-                    key={value}
-                    type="button"
-                    className={bodyMode === value ? "active" : ""}
-                    onClick={() => setBodyMode(value as BodyInputMode)}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
             </div>
+          ) : null}
+
+          {requestTab === "body" ? (
+            <div className="http-tab-stack">
+              <ToolTabs
+                active={bodyMode}
+                onChange={(value) => setBodyMode(value as BodyInputMode)}
+                tabs={[
+                  { id: "json", label: "JSON" },
+                  { id: "table", label: "表格" },
+                  { id: "urlencoded", label: "Form" },
+                  { id: "raw", label: "Raw" },
+                ]}
+              />
           {bodyMode === "json" ? (
             <Field label="JSON Body">
               <textarea value={bodyJson} onChange={(event) => setBodyJson(event.target.value)} placeholder='{"name":"SwiftBox"}' spellCheck={false} />
             </Field>
           ) : null}
           {bodyMode === "table" ? (
-            <div className="kv-editor">
-              {bodyRows.map((row) => (
-                <div key={row.id} className="kv-row">
-                  <input type="checkbox" checked={row.enabled} onChange={(event) => updateBodyRow(row.id, { enabled: event.target.checked })} />
-                  <input value={row.key} onChange={(event) => updateBodyRow(row.id, { key: event.target.value })} placeholder="Key" />
-                  <input value={row.value} onChange={(event) => updateBodyRow(row.id, { value: event.target.value })} placeholder="Value" />
-                  <button type="button" onClick={() => setBodyRows((rows) => rows.filter((item) => item.id !== row.id))}>删除</button>
-                </div>
-              ))}
-              <button type="button" onClick={() => setBodyRows((rows) => [...rows, createRow()])}>添加字段</button>
+            <KeyValueEditor rows={bodyRows} onChange={setBodyRows} onAdd={() => createRow()} addLabel="添加字段" />
+          ) : null}
+          {bodyMode === "urlencoded" ? (
+            <div className="http-tab-stack">
+              <KeyValueEditor rows={bodyRows} onChange={setBodyRows} onAdd={() => createRow()} addLabel="添加字段" />
+              <ResultViewer title="x-www-form-urlencoded" value={rowsToFormUrlEncoded(bodyRows)} />
             </div>
           ) : null}
           {bodyMode === "raw" ? (
@@ -431,23 +484,41 @@ export function HttpTool() {
               <textarea value={rawBody} onChange={(event) => setRawBody(event.target.value)} spellCheck={false} />
             </Field>
           ) : null}
-          </section>
-        </div>
+            </div>
+          ) : null}
 
-        {headerJsonError ? <p className="error">Headers JSON 错误：{headerJsonError}</p> : null}
-        {bodyJsonError ? <p className="error">Body JSON 错误：{bodyJsonError}</p> : null}
-        {headerState.invalid.length ? <p className="error">{headerState.invalid.join("；")}</p> : null}
-        {error ? <p className="error">{error}</p> : null}
+          {requestTab === "curl" ? (
+            <div className="http-tab-stack">
+              <div className="button-row">
+                <button type="button" onClick={() => applyCurl(false)}>解析到表单</button>
+                <button type="button" onClick={() => applyCurl(true)}>解析并发送</button>
+              </div>
+              <textarea className="curl-input" value={curlInput} onChange={(event) => setCurlInput(event.target.value)} spellCheck={false} />
+            </div>
+          ) : null}
+        </ToolPanel>
+
+        {headerJsonError ? <InlineError message={`Headers JSON 错误：${headerJsonError}`} /> : null}
+        {bodyJsonError ? <InlineError message={`Body JSON 错误：${bodyJsonError}`} /> : null}
+        {headerState.invalid.length ? <InlineError message={headerState.invalid.join("；")} /> : null}
+        {error ? <InlineError message={error} /> : null}
 
         {response ? (
-          <section className="http-response-panel">
-            <div className="http-response-head">
-              <div>
-                <strong>响应结果</strong>
-                <span>{response.status} {response.status_text}</span>
-              </div>
-              <button type="button" onClick={() => copyText(responseBody)}>复制响应体</button>
-            </div>
+          <ToolPanel
+            title="响应结果"
+            description={`${response.status} ${response.status_text}`}
+            action={
+              <ToolTabs
+                active={responseTab}
+                onChange={(value) => setResponseTab(value as ResponseTab)}
+                tabs={[
+                  { id: "body", label: "Body" },
+                  { id: "headers", label: "Headers" },
+                  { id: "info", label: "Info" },
+                ]}
+              />
+            }
+          >
             <MetricStrip
               items={[
                 { label: "状态", value: `${response.status}` },
@@ -456,11 +527,13 @@ export function HttpTool() {
                 { label: "大小", value: `${response.body.length} chars` },
               ]}
             />
-            <Output value={`${JSON.stringify(response.headers, null, 2)}\n\n${responseBody}`} />
-          </section>
+            {responseTab === "body" ? <ResultViewer title="Body" value={responseBody} /> : null}
+            {responseTab === "headers" ? <ResultViewer title="Headers" value={JSON.stringify(response.headers, null, 2)} /> : null}
+            {responseTab === "info" ? <ResultViewer title="Info" value={responseInfo} /> : null}
+          </ToolPanel>
         ) : null}
       </div>
-    </ToolShell>
+    </ToolWorkspace>
   );
 }
 
@@ -508,6 +581,7 @@ export function UuidTool() {
 
 export function JwtTool() {
   const [input, setInput] = useState("");
+  const [tab, setTab] = useState<JwtTab>("payload");
   const result = useMemo(() => {
     if (!input.trim()) return { ok: false as const, message: "粘贴 JWT 后会在本地解码，不验证签名。" };
     const parts = input.trim().split(".");
@@ -525,30 +599,75 @@ export function JwtTool() {
   const output = result.ok
     ? `Header\n${JSON.stringify(result.header, null, 2)}\n\nPayload\n${JSON.stringify(result.payload, null, 2)}`
     : result.message;
+  const claimsOutput = result.ok
+    ? [
+        `Subject: ${result.payload.sub ?? "-"}`,
+        `Issuer: ${result.payload.iss ?? "-"}`,
+        `Audience: ${Array.isArray(result.payload.aud) ? result.payload.aud.join(", ") : result.payload.aud ?? "-"}`,
+        `Issued At: ${formatJwtTime(result.payload.iat)}`,
+        `Not Before: ${formatJwtTime(result.payload.nbf)}`,
+        `Expires: ${formatJwtTime(result.payload.exp)}`,
+        `Status: ${result.expired === null ? "无 exp" : result.expired ? "已过期" : "未过期"}`,
+      ].join("\n")
+    : "";
+  const tabValue = result.ok
+    ? {
+        payload: JSON.stringify(result.payload, null, 2),
+        header: JSON.stringify(result.header, null, 2),
+        claims: claimsOutput,
+      }[tab]
+    : "";
 
   return (
-    <ToolShell title="JWT 解码" note="只做本地 decode，展示常见声明和过期状态。">
+    <ToolWorkspace
+      title="JWT 解码"
+      description="本地 decode Header 和 Payload；不验证签名，不承诺 token 可信。"
+      actions={<CopyButton value={tabValue || output} disabled={!result.ok}>复制当前视图</CopyButton>}
+      meta={
+        <>
+          <StatusBadge tone={result.ok ? (result.expired ? "danger" : "success") : "warning"}>
+            {result.ok ? (result.expired ? "已过期" : "可解码") : "等待令牌"}
+          </StatusBadge>
+          {result.ok ? <span>{result.header.alg ?? "未知算法"}</span> : null}
+        </>
+      }
+    >
       <Field label="JWT">
         <textarea value={input} onChange={(event) => setInput(event.target.value)} spellCheck={false} />
       </Field>
-      <div className="button-row">
-        <StatusPill tone={result.ok ? (result.expired ? "danger" : "success") : "warning"}>
-          {result.ok ? (result.expired ? "已过期" : "可解码") : "等待令牌"}
-        </StatusPill>
-        <button type="button" onClick={() => copyText(output)}>复制结果</button>
-      </div>
+      <InlineError message="只做本地解码，不做签名校验；请不要把这里的结果当作鉴权结论。" />
       {result.ok ? (
-        <MetricStrip
-          items={[
-            { label: "算法", value: result.header.alg ?? "未知" },
-            { label: "类型", value: result.header.typ ?? "JWT" },
-            { label: "Subject", value: result.payload.sub ?? "-" },
-            { label: "过期", value: result.payload.exp ? new Date(result.payload.exp * 1000).toLocaleString() : "无 exp" },
-          ]}
-        />
-      ) : null}
-      <Output value={output} />
-    </ToolShell>
+        <>
+          <MetricStrip
+            items={[
+              { label: "算法", value: result.header.alg ?? "未知" },
+              { label: "类型", value: result.header.typ ?? "JWT" },
+              { label: "Subject", value: result.payload.sub ?? "-" },
+              { label: "过期", value: formatJwtTime(result.payload.exp) },
+            ]}
+          />
+          <ToolPanel
+            title="解码结果"
+            description="Header、Payload 和常见 Claims 分开查看。"
+            action={
+              <ToolTabs
+                active={tab}
+                onChange={(value) => setTab(value as JwtTab)}
+                tabs={[
+                  { id: "payload", label: "Payload" },
+                  { id: "header", label: "Header" },
+                  { id: "claims", label: "Claims" },
+                ]}
+              />
+            }
+          >
+            <ResultViewer value={tabValue} />
+          </ToolPanel>
+        </>
+      ) : (
+        <InlineError message={result.message} />
+      )}
+    </ToolWorkspace>
   );
 }
 

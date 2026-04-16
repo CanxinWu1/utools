@@ -7,6 +7,8 @@ const MAX_RECENTS = 6;
 
 export type ThemePreference = "light" | "dark";
 
+// Only non-sensitive preferences belong here. Tool inputs such as HTTP bodies,
+// JWTs, JSON payloads, images, and request headers must stay in component state.
 function readStringArray(key: string) {
   try {
     const value = localStorage.getItem(key);

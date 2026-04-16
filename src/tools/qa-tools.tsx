@@ -1,5 +1,45 @@
 import { useMemo, useState } from "react";
-import { copyText, Field, MetricStrip, Output, StatusPill, ToolSection, ToolShell } from "./shared";
+import { copyText, Field, MetricStrip, Output, ToolShell, CopyButton, InlineError, ResultViewer, StatusBadge, ToolPanel, ToolWorkspace } from "./ui";
+
+type RegexFlag = "g" | "i" | "m" | "s" | "u";
+
+const regexFlags: Array<{ id: RegexFlag; label: string }> = [
+  { id: "g", label: "Global" },
+  { id: "i", label: "Ignore Case" },
+  { id: "m", label: "Multiline" },
+  { id: "s", label: "Dot All" },
+  { id: "u", label: "Unicode" },
+];
+
+const regexTemplates = [
+  { label: "邮箱", value: "[\\w.-]+@[\\w.-]+\\.\\w+" },
+  { label: "URL", value: "https?:\\/\\/[^\\s]+" },
+  { label: "中文", value: "[\\u4e00-\\u9fa5]+" },
+  { label: "手机号", value: "1[3-9]\\d{9}" },
+];
+
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function highlightMatches(text: string, matches: RegExpMatchArray[]) {
+  if (!matches.length) return escapeHtml(text);
+  let cursor = 0;
+  let html = "";
+  matches.forEach((match) => {
+    const start = match.index ?? 0;
+    const end = start + match[0].length;
+    html += escapeHtml(text.slice(cursor, start));
+    html += `<mark>${escapeHtml(text.slice(start, end))}</mark>`;
+    cursor = end;
+  });
+  html += escapeHtml(text.slice(cursor));
+  return html;
+}
 
 function toCsv(rows: Array<Record<string, string | number>>) {
   const headers = Object.keys(rows[0] ?? {});
@@ -8,16 +48,16 @@ function toCsv(rows: Array<Record<string, string | number>>) {
 
 export function RegexTool() {
   const [pattern, setPattern] = useState("\\b\\w+Box\\b");
-  const [flags, setFlags] = useState("gi");
+  const [flags, setFlags] = useState<RegexFlag[]>(["g", "i"]);
   const [replacement, setReplacement] = useState("ToolBox");
   const [text, setText] = useState("SwiftBox 是一个桌面工具箱。swiftbox tools.");
   const result = useMemo(() => {
     try {
-      const normalizedFlags = flags.includes("g") ? flags : `${flags}g`;
+      const normalizedFlags = flags.includes("g") ? flags.join("") : `${flags.join("")}g`;
       const regexp = new RegExp(pattern, normalizedFlags);
       const matches = Array.from(text.matchAll(regexp));
       const replaced = text.replace(regexp, replacement);
-      return { ok: true as const, matches, replaced };
+      return { ok: true as const, matches, replaced, highlighted: highlightMatches(text, matches) };
     } catch (error) {
       return { ok: false as const, message: String(error) };
     }
@@ -33,36 +73,69 @@ export function RegexTool() {
       : "没有匹配结果"
     : `正则错误：${result.message}`;
 
+  function toggleFlag(flag: RegexFlag) {
+    setFlags((current) => (current.includes(flag) ? current.filter((item) => item !== flag) : [...current, flag]));
+  }
+
   return (
-    <ToolShell title="正则测试" note="查看匹配位置、捕获组和替换预览。">
+    <ToolWorkspace
+      title="正则测试"
+      description="查看匹配位置、捕获组、高亮结果和替换预览。"
+      actions={<CopyButton value={output} disabled={!result.ok}>复制匹配</CopyButton>}
+      meta={
+        <>
+          <StatusBadge tone={result.ok ? "success" : "danger"}>{result.ok ? "表达式有效" : "表达式错误"}</StatusBadge>
+          {result.ok ? <span>{result.matches.length} matches</span> : null}
+        </>
+      }
+    >
       <div className="split">
         <Field label="Pattern">
           <input value={pattern} onChange={(event) => setPattern(event.target.value)} />
         </Field>
-        <Field label="Flags">
-          <input value={flags} onChange={(event) => setFlags(event.target.value)} />
-        </Field>
+        <ToolPanel title="Flags" description="Global 会自动保证 matchAll 可用。">
+          <div className="flag-grid">
+            {regexFlags.map((flag) => (
+              <label key={flag.id} className="inline-check">
+                <input type="checkbox" checked={flags.includes(flag.id)} onChange={() => toggleFlag(flag.id)} />
+                {flag.id} - {flag.label}
+              </label>
+            ))}
+          </div>
+        </ToolPanel>
       </div>
       <Field label="Replacement">
         <input value={replacement} onChange={(event) => setReplacement(event.target.value)} />
       </Field>
+      <div className="button-row">
+        {regexTemplates.map((template) => (
+          <button key={template.label} type="button" onClick={() => setPattern(template.value)}>{template.label}</button>
+        ))}
+      </div>
       <Field label="测试文本">
         <textarea value={text} onChange={(event) => setText(event.target.value)} />
       </Field>
-      <div className="button-row">
-        <StatusPill tone={result.ok ? "success" : "danger"}>{result.ok ? "表达式有效" : "表达式错误"}</StatusPill>
-        <button type="button" onClick={() => copyText(output)}>复制匹配</button>
-        {result.ok ? <button type="button" onClick={() => copyText(result.replaced)}>复制替换结果</button> : null}
-      </div>
-      <div className="split">
-        <ToolSection title="匹配结果">
-          <Output value={output} />
-        </ToolSection>
-        <ToolSection title="替换预览">
-          <Output value={result.ok ? result.replaced : ""} />
-        </ToolSection>
-      </div>
-    </ToolShell>
+      {result.ok ? (
+        <>
+          <MetricStrip
+            items={[
+              { label: "匹配", value: result.matches.length },
+              { label: "捕获组", value: result.matches.reduce((total, match) => total + Math.max(0, match.length - 1), 0) },
+              { label: "Flags", value: flags.join("") },
+            ]}
+          />
+          <ToolPanel title="高亮预览" description="匹配内容以 mark 标记。">
+            <pre className="regex-highlight" dangerouslySetInnerHTML={{ __html: result.highlighted }} />
+          </ToolPanel>
+          <div className="split">
+            <ResultViewer title="匹配结果" value={output} />
+            <ResultViewer title="替换预览" value={result.replaced} actions={<CopyButton value={result.replaced}>复制替换</CopyButton>} />
+          </div>
+        </>
+      ) : (
+        <InlineError message={`正则错误：${result.message}`} />
+      )}
+    </ToolWorkspace>
   );
 }
 
