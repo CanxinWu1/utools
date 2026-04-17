@@ -1,7 +1,19 @@
 {
   "name": "swiftbox",
   "private": true,
+  "description": " SwiftBox 是一个轻量桌面工具箱，把开发、测试、产品、设计和办公的高频小工具集中到一个地方，支持快捷键唤起、命令搜索、收藏和最近使用",
   "version": "0.1.0",
+  "topics": [
+    "tauri",
+    "react",
+    "typescript",
+    "productivity",
+    "desktop-app",
+    "toolbox",
+    "macos",
+    "windows",
+    "linux"
+  ],
   "type": "module",
   "scripts": {
     "dev": "vite",

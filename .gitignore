@@ -13,6 +13,9 @@ dist
 dist-ssr
 *.local
 
+.ai-code-stats/commits.jsonl
+.ai-code-stats/weekly/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
