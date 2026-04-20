@@ -76,6 +76,75 @@ button {
     var(--bg);
 }
 
+.clipboard-window-shell {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: transparent;
+}
+
+.clipboard-window-backdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: rgba(12, 15, 20, 0.26);
+  backdrop-filter: blur(12px);
+}
+
+.clipboard-window-panel {
+  position: relative;
+  z-index: 1;
+  width: min(940px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  overflow: auto;
+  border: 1px solid var(--line-strong);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--panel) 94%, transparent);
+  box-shadow: 0 26px 60px rgba(0, 0, 0, 0.24);
+}
+
+.clipboard-window-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+  padding: 16px 18px 0;
+}
+
+.clipboard-window-header strong {
+  display: block;
+  margin-top: 4px;
+  font-size: 20px;
+}
+
+.clipboard-window-header p,
+.clipboard-window-header .clipboard-window-eyebrow {
+  margin: 0;
+}
+
+.clipboard-window-eyebrow {
+  color: var(--soft);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.clipboard-window-header p {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.clipboard-window-header .ghost-button {
+  flex: none;
+}
+
+.clipboard-float-window .tool-shell {
+  padding-top: 12px;
+}
+
 .sidebar {
   display: flex;
   min-height: 100vh;

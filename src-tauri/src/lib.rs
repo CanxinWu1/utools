@@ -149,10 +149,15 @@ pub fn run() {
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(|app, shortcut, event| {
-                    let Ok(expected) = Shortcut::from_str(QUICK_DESK_SHORTCUT) else {
+                    let Ok(toggle_shortcut) = Shortcut::from_str(QUICK_DESK_SHORTCUT) else {
                         return;
                     };
-                    if shortcut == &expected && event.state() == ShortcutState::Pressed {
+
+                    if event.state() != ShortcutState::Pressed {
+                        return;
+                    }
+
+                    if shortcut == &toggle_shortcut {
                         show_or_hide_main_window(app);
                     }
                 })

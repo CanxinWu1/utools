@@ -5,7 +5,7 @@ import { usePreferences } from "./state/preferences";
 import { roleFilters, tools } from "./tools/registry";
 import type { ToolDefinition } from "./tools/types";
 
-const HOTKEY_LABEL = "Cmd/Ctrl + Shift + Space";
+const HOTKEY_LABEL = "Cmd/Ctrl + Shift + Space（主窗口）";
 const categoryLabels: Record<ToolDefinition["category"], string> = {
   developer: "开发",
   request: "请求",
