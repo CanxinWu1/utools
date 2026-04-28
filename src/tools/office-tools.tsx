@@ -5,6 +5,191 @@ import { copyText, Field, MetricStrip, Output, ToolSection, ToolShell, CopyButto
 type TextActionTab = "cleanup" | "lines" | "case" | "format";
 type CsvMode = "csv-to-json" | "json-to-csv";
 type CsvDelimiter = "," | ";" | "\t";
+type SnippetTone = "formal" | "support" | "sales" | "internal";
+type EmailTone = "neutral" | "friendly" | "firm";
+type PriorityQuadrant = "do" | "schedule" | "delegate" | "drop";
+
+type Snippet = {
+  trigger: string;
+  title: string;
+  body: string;
+  tone: SnippetTone;
+};
+
+type PriorityTask = {
+  title: string;
+  importance: number;
+  urgency: number;
+  owner: string;
+};
+
+const snippetStorageKey = "swiftbox.office.snippets";
+
+const defaultSnippets: Snippet[] = [
+  {
+    trigger: ";meeting",
+    title: "会议跟进",
+    tone: "internal",
+    body: "大家好，\n\n同步一下本次会议结论：\n1. {{decision}}\n2. {{action}}\n\n负责人：{{owner}}\n截止时间：{{date}}\n\n如有遗漏请直接补充。",
+  },
+  {
+    trigger: ";delay",
+    title: "进度延期说明",
+    tone: "formal",
+    body: "您好，\n\n由于 {{reason}}，原计划在 {{date}} 完成的事项需要顺延。当前最新预计完成时间为 {{newDate}}。\n\n我会在推进过程中持续同步关键进展，感谢理解。",
+  },
+  {
+    trigger: ";support",
+    title: "客服排查回复",
+    tone: "support",
+    body: "您好，已收到您的反馈。\n\n为了更快定位问题，请补充以下信息：\n- 发生时间：\n- 操作路径：\n- 截图或录屏：\n- 账号或环境：\n\n我们会尽快跟进处理。",
+  },
+];
+
+function loadSnippets() {
+  try {
+    const saved = window.localStorage.getItem(snippetStorageKey);
+    if (!saved) return defaultSnippets;
+    const parsed = JSON.parse(saved) as Snippet[];
+    return Array.isArray(parsed) && parsed.length ? parsed : defaultSnippets;
+  } catch {
+    return defaultSnippets;
+  }
+}
+
+function applySnippetVariables(body: string, variables: Record<string, string>) {
+  return body.replace(/\{\{\s*([\w-]+)\s*\}\}/g, (_, key: string) => {
+    if (variables[key]) return variables[key];
+    if (key === "date") return new Date().toISOString().slice(0, 10);
+    return `{{${key}}}`;
+  });
+}
+
+function extractTemplateVariables(body: string) {
+  return Array.from(new Set(Array.from(body.matchAll(/\{\{\s*([\w-]+)\s*\}\}/g)).map((match) => match[1])));
+}
+
+function summarizeMeetingLine(line: string) {
+  return line
+    .replace(/^(结论|决定|decision|todo|待办|action|风险|risk|问题|issue)[:：\-\s]*/i, "")
+    .trim();
+}
+
+function buildMeetingNotes(input: string, options: { title: string; date: string; attendees: string }) {
+  const lines = input.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const decisions = lines.filter((line) => /^(结论|决定|decision)|决定|确认|采用|不做/i.test(line)).map(summarizeMeetingLine);
+  const actions = lines.filter((line) => /^(todo|待办|action)|负责人|截止|跟进|处理|完成/i.test(line)).map(summarizeMeetingLine);
+  const risks = lines.filter((line) => /^(风险|risk|问题|issue)|阻塞|依赖|延期|争议/i.test(line)).map(summarizeMeetingLine);
+  const summary = lines
+    .filter((line) => {
+      const normalized = summarizeMeetingLine(line);
+      return !decisions.includes(normalized) && !actions.includes(normalized) && !risks.includes(normalized);
+    })
+    .slice(0, 5);
+
+  const section = (heading: string, items: string[], empty: string) => [
+    `## ${heading}`,
+    ...(items.length ? items.map((item) => `- ${item}`) : [`- ${empty}`]),
+  ].join("\n");
+
+  return [
+    `# ${options.title || "会议纪要"}`,
+    "",
+    `- 日期：${options.date}`,
+    `- 参会人：${options.attendees || "待补充"}`,
+    "",
+    section("摘要", summary, "待补充会议背景和核心讨论。"),
+    "",
+    section("决策", decisions, "暂无明确决策。"),
+    "",
+    section("行动项", actions, "暂无行动项。"),
+    "",
+    section("风险 / 问题", risks, "暂无风险或阻塞。"),
+  ].join("\n");
+}
+
+function emailGreeting(tone: EmailTone) {
+  if (tone === "friendly") return "你好，";
+  if (tone === "firm") return "您好，";
+  return "您好，";
+}
+
+function buildEmailDraft(options: {
+  scene: string;
+  tone: EmailTone;
+  recipient: string;
+  goal: string;
+  context: string;
+  action: string;
+  deadline: string;
+}) {
+  const greeting = emailGreeting(options.tone);
+  const signoff = options.tone === "friendly" ? "谢谢，辛苦了。" : options.tone === "firm" ? "请按上述安排推进，谢谢。" : "感谢配合。";
+  const opener = options.scene === "follow-up"
+    ? "跟进一下前面沟通的事项。"
+    : options.scene === "request"
+      ? "这边需要你协助确认一件事。"
+      : options.scene === "apology"
+        ? "先说明一下当前进展中的变更。"
+        : "同步一下当前事项的最新情况。";
+
+  const lines = [`${options.recipient || greeting}`, "", opener];
+  if (options.goal) lines.push(`本次目标：${options.goal}`);
+  if (options.context) lines.push(`背景信息：${options.context}`);
+  if (options.action) lines.push(`需要动作：${options.action}`);
+  if (options.deadline) lines.push(`期望时间：${options.deadline}`);
+  lines.push("", signoff);
+  return lines.join("\n");
+}
+
+function parsePriorityTasks(input: string): PriorityTask[] {
+  return input
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const [title = "", importance = "3", urgency = "3", owner = ""] = line.split("|").map((item) => item.trim());
+      return {
+        title,
+        importance: Math.min(5, Math.max(1, Number(importance) || 3)),
+        urgency: Math.min(5, Math.max(1, Number(urgency) || 3)),
+        owner,
+      };
+    });
+}
+
+function getPriorityQuadrant(task: PriorityTask): PriorityQuadrant {
+  if (task.importance >= 4 && task.urgency >= 4) return "do";
+  if (task.importance >= 4) return "schedule";
+  if (task.urgency >= 4) return "delegate";
+  return "drop";
+}
+
+function formatPriorityPlan(tasks: PriorityTask[]) {
+  const labels: Record<PriorityQuadrant, string> = {
+    do: "立即处理",
+    schedule: "安排时间",
+    delegate: "委派或批处理",
+    drop: "暂缓 / 删除",
+  };
+  const quadrants: Record<PriorityQuadrant, PriorityTask[]> = {
+    do: [],
+    schedule: [],
+    delegate: [],
+    drop: [],
+  };
+
+  tasks.forEach((task) => {
+    quadrants[getPriorityQuadrant(task)].push(task);
+  });
+
+  return (Object.keys(labels) as PriorityQuadrant[]).map((key) => [
+    `## ${labels[key]}`,
+    ...(quadrants[key].length
+      ? quadrants[key].map((task) => `- ${task.title}${task.owner ? `（${task.owner}）` : ""} · 重要 ${task.importance} / 紧急 ${task.urgency}`)
+      : ["- 暂无"]),
+  ].join("\n")).join("\n\n");
+}
 
 function escapeHtml(value: string) {
   return value
@@ -391,6 +576,241 @@ export function QrTool() {
       <div className="button-row">
         <a className="download-link" href={dataUrl} download="swiftbox-qrcode.png">下载 PNG</a>
       </div>
+    </ToolWorkspace>
+  );
+}
+
+export function SnippetExpanderTool() {
+  const [snippets, setSnippets] = useState<Snippet[]>(loadSnippets);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [variables, setVariables] = useState<Record<string, string>>({
+    decision: "采用新的审批模板",
+    action: "本周五前完成第一版",
+    owner: "产品组",
+  });
+
+  const activeSnippet = snippets[activeIndex] ?? snippets[0] ?? defaultSnippets[0];
+  const variableKeys = useMemo(() => extractTemplateVariables(activeSnippet.body), [activeSnippet.body]);
+  const output = useMemo(() => applySnippetVariables(activeSnippet.body, variables), [activeSnippet.body, variables]);
+
+  useEffect(() => {
+    window.localStorage.setItem(snippetStorageKey, JSON.stringify(snippets));
+  }, [snippets]);
+
+  function updateSnippet(patch: Partial<Snippet>) {
+    setSnippets((items) => items.map((item, index) => (index === activeIndex ? { ...item, ...patch } : item)));
+  }
+
+  function addSnippet() {
+    setSnippets((items) => {
+      const next = [...items, { trigger: ";new", title: "新片段", tone: "internal" as const, body: "您好，\n\n{{content}}\n\n谢谢。" }];
+      setActiveIndex(next.length - 1);
+      return next;
+    });
+  }
+
+  function resetSnippets() {
+    setSnippets(defaultSnippets);
+    setActiveIndex(0);
+  }
+
+  return (
+    <ToolWorkspace
+      title="文本片段"
+      description="整理高频办公话术，支持触发词、模板变量和一键复制。"
+      actions={<CopyButton value={output}>复制展开文本</CopyButton>}
+      meta={
+        <>
+          <span>{snippets.length} 个片段</span>
+          <span>{variableKeys.length} 个变量</span>
+          <span>{activeSnippet.tone}</span>
+        </>
+      }
+    >
+      <div className="split align-start">
+        <ToolPanel title="片段库" description="适合沉淀邮件回复、客服话术和会议跟进模板。">
+          <Field label="当前片段">
+            <select value={activeIndex} onChange={(event) => setActiveIndex(Number(event.target.value))}>
+              {snippets.map((snippet, index) => (
+                <option key={`${snippet.trigger}-${index}`} value={index}>{snippet.trigger} · {snippet.title}</option>
+              ))}
+            </select>
+          </Field>
+          <div className="split">
+            <Field label="触发词">
+              <input value={activeSnippet.trigger} onChange={(event) => updateSnippet({ trigger: event.target.value })} />
+            </Field>
+            <Field label="语气">
+              <select value={activeSnippet.tone} onChange={(event) => updateSnippet({ tone: event.target.value as SnippetTone })}>
+                <option value="formal">正式</option>
+                <option value="support">客服</option>
+                <option value="sales">销售</option>
+                <option value="internal">内部协作</option>
+              </select>
+            </Field>
+          </div>
+          <Field label="标题">
+            <input value={activeSnippet.title} onChange={(event) => updateSnippet({ title: event.target.value })} />
+          </Field>
+          <Field label="模板正文">
+            <textarea value={activeSnippet.body} onChange={(event) => updateSnippet({ body: event.target.value })} />
+          </Field>
+          <div className="button-row">
+            <button type="button" onClick={addSnippet}>新增片段</button>
+            <button type="button" onClick={resetSnippets}>恢复示例</button>
+          </div>
+        </ToolPanel>
+        <ToolPanel title="变量" description="正文中的 {{变量名}} 会在输出里替换。">
+          {variableKeys.length ? (
+            variableKeys.map((key) => (
+              <Field key={key} label={key}>
+                <input value={variables[key] ?? ""} onChange={(event) => setVariables((current) => ({ ...current, [key]: event.target.value }))} />
+              </Field>
+            ))
+          ) : (
+            <p className="muted-text">当前模板没有变量。</p>
+          )}
+        </ToolPanel>
+      </div>
+      <ResultViewer title="展开结果" value={output} />
+    </ToolWorkspace>
+  );
+}
+
+export function MeetingNotesTool() {
+  const [title, setTitle] = useState("项目周会纪要");
+  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [attendees, setAttendees] = useState("产品、设计、前端、后端");
+  const [input, setInput] = useState("决定：本周先上线审批流第一阶段\n待办：前端周三前补齐空状态，负责人 Alex\n风险：测试环境数据不稳定，可能影响验收\n讨论了导出功能的权限边界");
+  const output = useMemo(() => buildMeetingNotes(input, { title, date, attendees }), [attendees, date, input, title]);
+  const actionCount = output.match(/^- /gm)?.length ?? 0;
+
+  return (
+    <ToolWorkspace
+      title="会议纪要整理"
+      description="把会议速记整理为摘要、决策、行动项和风险，适合会后快速同步。"
+      actions={<CopyButton value={output}>复制纪要</CopyButton>}
+      meta={
+        <>
+          <span>{input.split(/\r?\n/).filter(Boolean).length} 条速记</span>
+          <span>{actionCount} 条输出</span>
+        </>
+      }
+    >
+      <div className="split">
+        <Field label="会议标题">
+          <input value={title} onChange={(event) => setTitle(event.target.value)} />
+        </Field>
+        <Field label="日期">
+          <input type="date" value={date} onChange={(event) => setDate(event.target.value)} />
+        </Field>
+      </div>
+      <Field label="参会人">
+        <input value={attendees} onChange={(event) => setAttendees(event.target.value)} />
+      </Field>
+      <Field label="会议速记">
+        <textarea value={input} onChange={(event) => setInput(event.target.value)} />
+      </Field>
+      <ResultViewer title="Markdown 纪要" value={output} />
+    </ToolWorkspace>
+  );
+}
+
+export function EmailDraftTool() {
+  const [scene, setScene] = useState("follow-up");
+  const [tone, setTone] = useState<EmailTone>("neutral");
+  const [recipient, setRecipient] = useState("Hi Alex,");
+  const [goal, setGoal] = useState("确认本周上线范围和验收安排");
+  const [context, setContext] = useState("审批流第一阶段已完成开发，仍有两处文案需要产品确认。");
+  const [action, setAction] = useState("请在今天 18:00 前确认文案和验收人。");
+  const [deadline, setDeadline] = useState("今天 18:00");
+  const output = useMemo(() => buildEmailDraft({ scene, tone, recipient, goal, context, action, deadline }), [action, context, deadline, goal, recipient, scene, tone]);
+
+  return (
+    <ToolWorkspace
+      title="邮件草稿"
+      description="根据场景、语气和关键事实生成可复制的办公邮件初稿。"
+      actions={<CopyButton value={output}>复制邮件</CopyButton>}
+      meta={
+        <>
+          <span>{tone}</span>
+          <span>{output.length} 字符</span>
+        </>
+      }
+    >
+      <ToolPanel title="写作设置" description="保留事实输入，避免在正文里混入无关铺垫。">
+        <div className="split">
+          <Field label="场景">
+            <select value={scene} onChange={(event) => setScene(event.target.value)}>
+              <option value="follow-up">跟进事项</option>
+              <option value="request">请求协助</option>
+              <option value="apology">延期说明</option>
+              <option value="sync">进度同步</option>
+            </select>
+          </Field>
+          <Field label="语气">
+            <select value={tone} onChange={(event) => setTone(event.target.value as EmailTone)}>
+              <option value="neutral">中性</option>
+              <option value="friendly">友好</option>
+              <option value="firm">明确</option>
+            </select>
+          </Field>
+        </div>
+        <Field label="称呼">
+          <input value={recipient} onChange={(event) => setRecipient(event.target.value)} />
+        </Field>
+        <Field label="目标">
+          <input value={goal} onChange={(event) => setGoal(event.target.value)} />
+        </Field>
+        <Field label="背景">
+          <textarea value={context} onChange={(event) => setContext(event.target.value)} />
+        </Field>
+        <div className="split">
+          <Field label="需要动作">
+            <textarea value={action} onChange={(event) => setAction(event.target.value)} />
+          </Field>
+          <Field label="期望时间">
+            <input value={deadline} onChange={(event) => setDeadline(event.target.value)} />
+          </Field>
+        </div>
+      </ToolPanel>
+      <ResultViewer title="邮件草稿" value={output} />
+    </ToolWorkspace>
+  );
+}
+
+export function PriorityMatrixTool() {
+  const [input, setInput] = useState("修复线上导出失败 | 5 | 5 | Alex\n整理下月选题池 | 4 | 2 | Mia\n回复供应商报价 | 2 | 5 | Ops\n清理旧会议文档 | 2 | 2 | Team");
+  const tasks = useMemo(() => parsePriorityTasks(input), [input]);
+  const output = useMemo(() => formatPriorityPlan(tasks), [tasks]);
+  const doNow = tasks.filter((task) => getPriorityQuadrant(task) === "do").length;
+
+  return (
+    <ToolWorkspace
+      title="优先级矩阵"
+      description="按重要度和紧急度把待办拆到立即处理、安排时间、委派和暂缓。"
+      actions={<CopyButton value={output}>复制计划</CopyButton>}
+      meta={
+        <>
+          <span>{tasks.length} 个任务</span>
+          <span>{doNow} 个立即处理</span>
+        </>
+      }
+    >
+      <ToolPanel title="任务输入" description="每行格式：任务 | 重要度 1-5 | 紧急度 1-5 | 负责人。">
+        <Field label="待办列表">
+          <textarea value={input} onChange={(event) => setInput(event.target.value)} />
+        </Field>
+      </ToolPanel>
+      <MetricStrip
+        items={[
+          { label: "任务数", value: tasks.length },
+          { label: "立即处理", value: doNow },
+          { label: "平均重要度", value: tasks.length ? (tasks.reduce((sum, task) => sum + task.importance, 0) / tasks.length).toFixed(1) : "0" },
+          { label: "平均紧急度", value: tasks.length ? (tasks.reduce((sum, task) => sum + task.urgency, 0) / tasks.length).toFixed(1) : "0" },
+        ]}
+      />
+      <ResultViewer title="优先级计划" value={output} />
     </ToolWorkspace>
   );
 }

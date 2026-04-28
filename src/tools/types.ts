@@ -26,3 +26,34 @@ export interface RoleDefinition {
   title: string;
   hint: string;
 }
+
+export interface RoleQuickAction {
+  id: string;
+  title: string;
+  description: string;
+  toolId: string;
+  intent?: string;
+}
+
+export interface RoleToolGroup {
+  title: string;
+  description: string;
+  toolIds: string[];
+}
+
+export interface RoleWorkspaceDefinition {
+  role: ToolRole;
+  eyebrow: string;
+  title: string;
+  description: string;
+  quickActions: RoleQuickAction[];
+  recommendedToolIds: string[];
+  groups: RoleToolGroup[];
+}
+
+export interface ResolvedRoleWorkspace
+  extends Omit<RoleWorkspaceDefinition, "quickActions" | "recommendedToolIds" | "groups"> {
+  quickActions: Array<RoleQuickAction & { tool: ToolDefinition }>;
+  recommendedTools: ToolDefinition[];
+  groups: Array<Omit<RoleToolGroup, "toolIds"> & { tools: ToolDefinition[] }>;
+}

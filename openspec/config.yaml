@@ -8,6 +8,39 @@ schema: spec-driven
 #     Tech stack: TypeScript, React, Node.js
 #     We use conventional commits
 #     Domain: e-commerce platform
+context: |
+  项目名称：SwiftBox
+
+  项目定位：
+  SwiftBox 是一个基于 Tauri 2 + React + TypeScript 的轻量桌面快捷工具箱，面向开发、测试、产品、设计、运营和办公等高频工作场景。项目目标是把常用小工具集中到一个快速、可离线使用、可持续扩展的桌面入口中，减少用户在网页、脚本和零散工具之间来回切换。
+
+  核心体验：
+  - 通过 Cmd/Ctrl + Shift + Space 快捷键快速唤起主窗口。
+  - 按岗位和工具类型组织功能，支持搜索、收藏和最近使用。
+  - 工具尽量本地运行，敏感内容不依赖在线服务。
+  - 窗口关闭后可继续后台运行，并通过托盘或菜单栏退出。
+
+  主要工具方向：
+  - 开发工具：HTTP 请求、JSON、Base64、URL、时间戳、UUID、JWT、哈希摘要。
+  - 测试 / QA：正则测试、Mock 数据、数据格式化与转换。
+  - 产品 / 运营 / 办公：Markdown 预览、文本处理、二维码、常用字符串整理。
+  - 设计工具：颜色转换、图片取色、图片信息、配色板、对比度检查。
+  - 通用效率：计算器、密码生成器、房贷计算器、时区转换、HTML 实体、XML 格式化。
+  - 高级 API / 安全：HMAC / Webhook 签名、AWS SigV4 签名。
+
+  技术栈：
+  - 桌面框架：Tauri 2
+  - 前端框架：React 19 + TypeScript
+  - 构建工具：Vite 7
+  - 包管理器：pnpm
+  - 本地能力：Tauri API、系统快捷键、事件通信、托盘 / 菜单栏、剪贴板相关能力
+
+  实现约定：
+  - 优先沿用现有 src/tools 下的工具注册、分类、面板组件和 UI 组件模式。
+  - 新工具应通过 ToolDefinition 注册，并保持工具面板的输入、输出、错误状态清晰可用。
+  - 面向桌面生产力场景，界面应保持紧凑、清晰、低干扰，避免营销化布局。
+  - 需要处理敏感文本、令牌、签名或请求数据时，优先采用本地计算和本地状态。
+  - 变更应保持小步、可验证，避免无关重构。
 
 # Per-artifact rules (optional)
 # Add custom rules for specific artifacts.

@@ -1,4 +1,4 @@
-import type { RoleDefinition, ToolDefinition } from "./types";
+import type { ResolvedRoleWorkspace, RoleDefinition, RoleWorkspaceDefinition, ToolDefinition, ToolRole } from "./types";
 import {
   Base64Tool,
   ColorTool,
@@ -6,16 +6,20 @@ import {
   CronTool,
   CsvJsonTool,
   DiffTool,
+  EmailDraftTool,
   HashTool,
   HttpTool,
   ImageInfoTool,
   JsonTool,
   JwtTool,
   MarkdownTool,
+  MeetingNotesTool,
   MockDataTool,
   PaletteTool,
+  PriorityMatrixTool,
   QrTool,
   RegexTool,
+  SnippetExpanderTool,
   TextTool,
   TimestampTool,
   LoremTool,
@@ -272,6 +276,42 @@ export const tools: ToolDefinition[] = [
     component: TextTool,
   },
   {
+    id: "snippets",
+    title: "文本片段",
+    description: "沉淀常用话术和模板变量，像 TextExpander 一样快速展开。",
+    roles: ["office", "operations", "product", "qa"],
+    category: "writing",
+    keywords: ["snippet", "textexpander", "模板", "话术", "短语", "客服"],
+    component: SnippetExpanderTool,
+  },
+  {
+    id: "meeting-notes",
+    title: "会议纪要整理",
+    description: "把会议速记整理为摘要、决策、行动项和风险。",
+    roles: ["office", "product", "operations", "qa"],
+    category: "writing",
+    keywords: ["meeting", "notes", "会议", "纪要", "待办", "action item"],
+    component: MeetingNotesTool,
+  },
+  {
+    id: "email-draft",
+    title: "邮件草稿",
+    description: "按场景、语气和关键事实生成办公邮件初稿。",
+    roles: ["office", "operations", "product"],
+    category: "writing",
+    keywords: ["email", "mail", "邮件", "回复", "跟进", "草稿"],
+    component: EmailDraftTool,
+  },
+  {
+    id: "priority-matrix",
+    title: "优先级矩阵",
+    description: "按重要度和紧急度整理待办，输出可复制执行计划。",
+    roles: ["office", "product", "operations", "qa"],
+    category: "data",
+    keywords: ["eisenhower", "priority", "todo", "待办", "优先级", "四象限"],
+    component: PriorityMatrixTool,
+  },
+  {
     id: "lorem",
     title: "占位文案",
     description: "生成产品、办公和设计语气的占位文本。",
@@ -326,3 +366,170 @@ export const tools: ToolDefinition[] = [
     component: UnitTool,
   },
 ];
+
+export const roleWorkspaces: RoleWorkspaceDefinition[] = [
+  {
+    role: "frontend",
+    eyebrow: "Frontend workspace",
+    title: "前端开发工作台",
+    description: "把样式、接口、数据格式和时间调试放到一屏，适合日常页面开发和联调。",
+    quickActions: [
+      { id: "frontend-format-json", title: "格式化 JSON", description: "整理接口响应或配置片段", toolId: "json" },
+      { id: "frontend-convert-color", title: "转换颜色", description: "HEX / RGB / HSL 快速互转", toolId: "color" },
+      { id: "frontend-parse-url", title: "解析 URL", description: "拆解链接和 Query 参数", toolId: "url" },
+      { id: "frontend-check-contrast", title: "检查对比度", description: "验证文字和背景可读性", toolId: "contrast" },
+    ],
+    recommendedToolIds: ["json", "color", "url", "timestamp", "base64", "css-units"],
+    groups: [
+      { title: "接口与数据", description: "联调时最常用的数据处理入口。", toolIds: ["http", "json", "jwt", "timestamp"] },
+      { title: "样式与视觉", description: "处理颜色、单位和可访问性。", toolIds: ["color", "palette", "contrast", "css-units"] },
+      { title: "编码转换", description: "快速处理链接和传输格式。", toolIds: ["url", "base64", "html-entity"] },
+    ],
+  },
+  {
+    role: "backend",
+    eyebrow: "Backend workspace",
+    title: "后端开发工作台",
+    description: "围绕接口调试、令牌检查、签名生成和测试数据组织后端高频动作。",
+    quickActions: [
+      { id: "backend-send-request", title: "发送 HTTP 请求", description: "轻量调试接口和响应", toolId: "http" },
+      { id: "backend-decode-jwt", title: "解码 JWT", description: "查看 Payload 和过期时间", toolId: "jwt" },
+      { id: "backend-sign-hmac", title: "生成 HMAC", description: "调试 Webhook 签名", toolId: "hmac" },
+      { id: "backend-mock-data", title: "生成 Mock 数据", description: "补齐接口测试样例", toolId: "mock" },
+    ],
+    recommendedToolIds: ["http", "json", "jwt", "hmac", "sigv4", "mock"],
+    groups: [
+      { title: "请求调试", description: "接口请求、签名和鉴权验证。", toolIds: ["http", "hmac", "sigv4", "jwt"] },
+      { title: "数据处理", description: "格式、编码、时间和标识符。", toolIds: ["json", "csv-json", "base64", "timestamp", "uuid"] },
+      { title: "排查辅助", description: "日志、定时任务和文本差异。", toolIds: ["hash", "cron", "diff", "regex"] },
+    ],
+  },
+  {
+    role: "qa",
+    eyebrow: "QA workspace",
+    title: "测试 / QA 工作台",
+    description: "聚合接口验证、正则匹配、Mock 数据、文本对比和边界数据生成。",
+    quickActions: [
+      { id: "qa-run-request", title: "验证接口", description: "发送请求并查看响应", toolId: "http" },
+      { id: "qa-test-regex", title: "测试正则", description: "匹配样例文本", toolId: "regex" },
+      { id: "qa-generate-mock", title: "生成测试数据", description: "快速构造样例值", toolId: "mock" },
+      { id: "qa-compare-text", title: "对比文本", description: "检查预期和实际差异", toolId: "diff" },
+    ],
+    recommendedToolIds: ["http", "regex", "mock", "diff", "json", "csv-json"],
+    groups: [
+      { title: "接口验证", description: "请求、响应、令牌和数据格式。", toolIds: ["http", "json", "jwt", "csv-json"] },
+      { title: "数据构造", description: "生成随机值和 Mock 内容。", toolIds: ["mock", "uuid", "password", "timestamp"] },
+      { title: "结果检查", description: "正则、差异和摘要校验。", toolIds: ["regex", "diff", "hash", "priority-matrix"] },
+    ],
+  },
+  {
+    role: "product",
+    eyebrow: "Product workspace",
+    title: "产品工作台",
+    description: "面向需求整理、文档预览、优先级判断和分享物料生成的产品入口。",
+    quickActions: [
+      { id: "product-preview-md", title: "预览 Markdown", description: "检查需求文档排版", toolId: "markdown" },
+      { id: "product-clean-text", title: "整理文本", description: "清洗换行、重复和大小写", toolId: "text" },
+      { id: "product-priority", title: "梳理优先级", description: "把待办放入四象限", toolId: "priority-matrix" },
+      { id: "product-make-qr", title: "生成二维码", description: "分享链接和活动入口", toolId: "qr" },
+    ],
+    recommendedToolIds: ["markdown", "text", "priority-matrix", "meeting-notes", "qr", "diff"],
+    groups: [
+      { title: "需求与文档", description: "写作、预览和会后同步。", toolIds: ["markdown", "meeting-notes", "text", "diff"] },
+      { title: "决策辅助", description: "优先级、样例数据和表格转换。", toolIds: ["priority-matrix", "mock", "csv-json"] },
+      { title: "分享与交付", description: "二维码、链接和占位文案。", toolIds: ["qr", "url", "lorem"] },
+    ],
+  },
+  {
+    role: "design",
+    eyebrow: "Design workspace",
+    title: "设计工作台",
+    description: "集中处理取色、配色、对比度、图片信息和前端交付相关的小工具。",
+    quickActions: [
+      { id: "design-pick-color", title: "处理颜色", description: "转换或从图片取色", toolId: "color" },
+      { id: "design-build-palette", title: "生成配色", description: "从主色扩展色阶", toolId: "palette" },
+      { id: "design-check-contrast", title: "检查对比度", description: "验证 WCAG 可读性", toolId: "contrast" },
+      { id: "design-image-info", title: "查看图片信息", description: "读取尺寸、格式和体积", toolId: "image-info" },
+    ],
+    recommendedToolIds: ["color", "palette", "contrast", "image-info", "css-units", "lorem"],
+    groups: [
+      { title: "颜色系统", description: "取色、配色和可访问性。", toolIds: ["color", "palette", "contrast"] },
+      { title: "素材检查", description: "图片信息和交付辅助。", toolIds: ["image-info", "css-units"] },
+      { title: "文案占位", description: "设计稿中的内容和命名辅助。", toolIds: ["lorem", "case"] },
+    ],
+  },
+  {
+    role: "operations",
+    eyebrow: "Operations workspace",
+    title: "运营工作台",
+    description: "覆盖链接处理、二维码、话术模板、表格转换和活动文案的运营高频入口。",
+    quickActions: [
+      { id: "operations-make-qr", title: "生成二维码", description: "快速生成分享入口", toolId: "qr" },
+      { id: "operations-parse-url", title: "整理链接", description: "解析和重组 Query 参数", toolId: "url" },
+      { id: "operations-snippet", title: "展开话术", description: "复用客服和活动模板", toolId: "snippets" },
+      { id: "operations-csv-json", title: "转换表格数据", description: "CSV 和 JSON 互转", toolId: "csv-json" },
+    ],
+    recommendedToolIds: ["qr", "url", "snippets", "csv-json", "email-draft", "text"],
+    groups: [
+      { title: "链接与投放", description: "二维码、链接参数和内容分享。", toolIds: ["qr", "url", "html-entity"] },
+      { title: "内容生产", description: "文案、邮件和模板话术。", toolIds: ["snippets", "email-draft", "text", "lorem"] },
+      { title: "数据整理", description: "表格、XML 和优先级归类。", toolIds: ["csv-json", "xml", "priority-matrix"] },
+    ],
+  },
+  {
+    role: "office",
+    eyebrow: "Office workspace",
+    title: "办公通用工作台",
+    description: "为日常文本、邮件、会议、计算、时间和待办整理提供一组低打扰入口。",
+    quickActions: [
+      { id: "office-draft-email", title: "写邮件草稿", description: "根据事实生成初稿", toolId: "email-draft" },
+      { id: "office-meeting-notes", title: "整理会议纪要", description: "速记转摘要和行动项", toolId: "meeting-notes" },
+      { id: "office-calc", title: "快速计算", description: "处理日常算式", toolId: "calculator" },
+      { id: "office-priority", title: "整理待办", description: "按重要紧急拆分任务", toolId: "priority-matrix" },
+    ],
+    recommendedToolIds: ["email-draft", "meeting-notes", "text", "calculator", "timezone", "priority-matrix"],
+    groups: [
+      { title: "文本与沟通", description: "邮件、片段、会议和普通文本。", toolIds: ["email-draft", "snippets", "meeting-notes", "text"] },
+      { title: "计算与时间", description: "数字、房贷和跨时区沟通。", toolIds: ["calculator", "mortgage", "timezone", "timestamp"] },
+      { title: "整理与转换", description: "待办、格式和大小写转换。", toolIds: ["priority-matrix", "case", "markdown", "csv-json"] },
+    ],
+  },
+];
+
+const toolById = new Map(tools.map((tool) => [tool.id, tool]));
+
+export function getToolById(toolId: string) {
+  return toolById.get(toolId);
+}
+
+export function resolveToolsById(toolIds: string[]) {
+  return toolIds
+    .map((toolId) => toolById.get(toolId))
+    .filter((tool): tool is ToolDefinition => Boolean(tool));
+}
+
+export function getRoleWorkspace(role: ToolRole): ResolvedRoleWorkspace | undefined {
+  const workspace = roleWorkspaces.find((item) => item.role === role);
+  if (!workspace) return undefined;
+
+  return {
+    role: workspace.role,
+    eyebrow: workspace.eyebrow,
+    title: workspace.title,
+    description: workspace.description,
+    quickActions: workspace.quickActions
+      .map((action) => {
+        const tool = toolById.get(action.toolId);
+        return tool ? { ...action, tool } : undefined;
+      })
+      .filter((action): action is ResolvedRoleWorkspace["quickActions"][number] => Boolean(action)),
+    recommendedTools: resolveToolsById(workspace.recommendedToolIds),
+    groups: workspace.groups
+      .map((group) => ({
+        title: group.title,
+        description: group.description,
+        tools: resolveToolsById(group.toolIds),
+      }))
+      .filter((group) => group.tools.length > 0),
+  };
+}

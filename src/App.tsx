@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import "./App.css";
 import { usePreferences } from "./state/preferences";
-import { roleFilters, tools } from "./tools/registry";
+import { getRoleWorkspace, roleFilters, tools } from "./tools/registry";
 import type { ToolDefinition } from "./tools/types";
 
 const HOTKEY_LABEL = "Cmd/Ctrl + Shift + Space（主窗口）";
@@ -30,6 +30,7 @@ function App() {
   const [activeToolId, setActiveToolId] = useState("http");
   const [view, setView] = useState<"home" | "tool">("home");
   const { favorites, recents, theme, toggleFavorite, touchRecent, toggleTheme } = usePreferences();
+  const trimmedQuery = query.trim();
 
   useEffect(() => {
     const unlisten = listen("focus-search", () => {
@@ -64,23 +65,32 @@ function App() {
 
   const visibleTools = useMemo(() => {
     return tools
-      .filter((tool) => activeRole === "all" || tool.roles.includes(activeRole))
-      .filter((tool) => !query.trim() || matchesTool(tool, query.trim()))
+      .filter((tool) => !trimmedQuery || matchesTool(tool, trimmedQuery))
       .sort((left, right) => {
         const leftScore = Number(favorites.includes(left.id)) * 4 + Number(recents.includes(left.id)) * 2;
         const rightScore = Number(favorites.includes(right.id)) * 4 + Number(recents.includes(right.id)) * 2;
         return rightScore - leftScore || left.title.localeCompare(right.title);
       });
-  }, [activeRole, favorites, query, recents]);
+  }, [favorites, recents, trimmedQuery]);
 
   const activeTool = tools.find((tool) => tool.id === activeToolId) ?? tools[0];
   const activeRoleInfo = roleFilters.find((role) => role.id === activeRole) ?? roleFilters[0];
+  const roleWorkspace = activeRole === "all" ? undefined : getRoleWorkspace(activeRole);
+  const showRoleWorkspace = view === "home" && activeRole !== "all" && Boolean(roleWorkspace) && !trimmedQuery;
   const ActivePanel = activeTool.component;
   const favoriteTools = tools.filter((tool) => favorites.includes(tool.id));
   const recentTools = recents
     .map((id) => tools.find((tool) => tool.id === id))
     .filter((tool): tool is ToolDefinition => Boolean(tool))
     .slice(0, 4);
+  const activeToolRole = activeRole === "all" ? undefined : activeRole;
+  const roleRecentTools = activeToolRole
+    ? recents
+      .map((id) => tools.find((tool) => tool.id === id))
+      .filter((tool): tool is ToolDefinition => Boolean(tool))
+      .filter((tool) => tool.roles.includes(activeToolRole))
+      .slice(0, 4)
+    : recentTools;
 
   function openTool(toolId: string) {
     setActiveToolId(toolId);
@@ -96,6 +106,30 @@ function App() {
   function selectRole(roleId: (typeof roleFilters)[number]["id"]) {
     setActiveRole(roleId);
     setView("home");
+  }
+
+  function renderToolCard(tool: ToolDefinition, compact = false) {
+    return (
+      <article key={tool.id} className={activeTool.id === tool.id ? "tool-card selected" : "tool-card"}>
+        <button type="button" className={compact ? "tool-open compact" : "tool-open"} onClick={() => openTool(tool.id)}>
+          <span className={`tool-icon category-${tool.category}`}>{tool.title.slice(0, 1)}</span>
+          <span className="tool-copy">
+            <strong>{tool.title}</strong>
+            <small>{tool.description}</small>
+            <em>{categoryLabels[tool.category]} · {tool.roles.length} 个岗位</em>
+            <span className="keyword-line">{tool.keywords.slice(0, 3).join(" / ")}</span>
+          </span>
+        </button>
+        <button
+          type="button"
+          className={favorites.includes(tool.id) ? "favorite on" : "favorite"}
+          aria-label={favorites.includes(tool.id) ? "取消收藏" : "收藏"}
+          onClick={() => toggleFavorite(tool.id)}
+        >
+          ★
+        </button>
+      </article>
+    );
   }
 
   return (
@@ -169,22 +203,28 @@ function App() {
           <section className="home-page">
             <div className="launch-summary">
               <div>
-                <span className="eyebrow">Command center</span>
-                <h2>选择一个工具开始</h2>
-                <p>按岗位筛选、搜索关键词，打开后进入独立使用页面。</p>
+                <span className="eyebrow">{showRoleWorkspace ? roleWorkspace?.eyebrow : "Command center"}</span>
+                <h2>{showRoleWorkspace ? roleWorkspace?.title : "选择一个工具开始"}</h2>
+                <p>
+                  {showRoleWorkspace
+                    ? roleWorkspace?.description
+                    : trimmedQuery
+                      ? "搜索会覆盖全部工具，方便从任何岗位入口直接找到目标。"
+                      : "默认展示全部工具；选择岗位可进入对应工作台，打开后进入独立使用页面。"}
+                </p>
               </div>
               <div className="summary-metrics" aria-label="工具概览">
                 <span>
-                  <strong>{visibleTools.length}</strong>
-                  <small>当前工具</small>
+                  <strong>{showRoleWorkspace ? roleWorkspace?.recommendedTools.length : visibleTools.length}</strong>
+                  <small>{showRoleWorkspace ? "推荐" : "当前工具"}</small>
                 </span>
                 <span>
-                  <strong>{favoriteTools.length}</strong>
-                  <small>收藏</small>
+                  <strong>{showRoleWorkspace ? roleWorkspace?.quickActions.length : favoriteTools.length}</strong>
+                  <small>{showRoleWorkspace ? "快捷动作" : "收藏"}</small>
                 </span>
                 <span>
-                  <strong>{recentTools.length}</strong>
-                  <small>最近</small>
+                  <strong>{showRoleWorkspace ? roleRecentTools.length : recentTools.length}</strong>
+                  <small>{showRoleWorkspace ? "岗位最近" : "最近"}</small>
                 </span>
               </div>
             </div>
@@ -214,29 +254,88 @@ function App() {
               </div>
             ) : null}
 
-            {visibleTools.length ? (
+            {showRoleWorkspace && roleWorkspace ? (
+              <div className="role-workspace">
+                {roleWorkspace.quickActions.length ? (
+                  <section className="role-section">
+                    <div className="role-section-head">
+                      <div>
+                        <strong>常用动作</strong>
+                        <span>用任务语言直接进入对应工具</span>
+                      </div>
+                    </div>
+                    <div className="quick-action-grid">
+                      {roleWorkspace.quickActions.map((action) => (
+                        <button key={action.id} type="button" className="quick-action" onClick={() => openTool(action.tool.id)}>
+                          <span className={`tool-icon category-${action.tool.category}`}>{action.tool.title.slice(0, 1)}</span>
+                          <span>
+                            <strong>{action.title}</strong>
+                            <small>{action.description}</small>
+                            <em>{action.tool.title}</em>
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </section>
+                ) : null}
+
+                {roleWorkspace.recommendedTools.length ? (
+                  <section className="role-section">
+                    <div className="role-section-head">
+                      <div>
+                        <strong>推荐工具</strong>
+                        <span>这个岗位最常用的一组入口</span>
+                      </div>
+                    </div>
+                    <div className="tool-grid compact-grid">
+                      {roleWorkspace.recommendedTools.map((tool) => renderToolCard(tool, true))}
+                    </div>
+                  </section>
+                ) : null}
+
+                {roleRecentTools.length ? (
+                  <section className="role-section">
+                    <div className="role-section-head">
+                      <div>
+                        <strong>岗位最近使用</strong>
+                        <span>从全局最近使用里筛出当前岗位相关工具</span>
+                      </div>
+                    </div>
+                    <div className="quick-chip-row">
+                      {roleRecentTools.map((tool) => (
+                        <button key={tool.id} type="button" onClick={() => openTool(tool.id)}>{tool.title}</button>
+                      ))}
+                    </div>
+                  </section>
+                ) : null}
+
+                <div className="role-group-grid">
+                  {roleWorkspace.groups.map((group) => (
+                    <section key={group.title} className="role-group">
+                      <div className="role-section-head">
+                        <div>
+                          <strong>{group.title}</strong>
+                          <span>{group.description}</span>
+                        </div>
+                      </div>
+                      <div className="role-tool-list">
+                        {group.tools.map((tool) => (
+                          <button key={tool.id} type="button" onClick={() => openTool(tool.id)}>
+                            <span className={`tool-icon category-${tool.category}`}>{tool.title.slice(0, 1)}</span>
+                            <span>
+                              <strong>{tool.title}</strong>
+                              <small>{tool.description}</small>
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    </section>
+                  ))}
+                </div>
+              </div>
+            ) : visibleTools.length ? (
               <div className="tool-grid">
-                {visibleTools.map((tool) => (
-                  <article key={tool.id} className={activeTool.id === tool.id ? "tool-card selected" : "tool-card"}>
-                    <button type="button" className="tool-open" onClick={() => openTool(tool.id)}>
-                      <span className={`tool-icon category-${tool.category}`}>{tool.title.slice(0, 1)}</span>
-                      <span className="tool-copy">
-                        <strong>{tool.title}</strong>
-                        <small>{tool.description}</small>
-                        <em>{categoryLabels[tool.category]} · {tool.roles.length} 个岗位</em>
-                        <span className="keyword-line">{tool.keywords.slice(0, 3).join(" / ")}</span>
-                      </span>
-                    </button>
-                    <button
-                      type="button"
-                      className={favorites.includes(tool.id) ? "favorite on" : "favorite"}
-                      aria-label={favorites.includes(tool.id) ? "取消收藏" : "收藏"}
-                      onClick={() => toggleFavorite(tool.id)}
-                    >
-                      ★
-                    </button>
-                  </article>
-                ))}
+                {visibleTools.map((tool) => renderToolCard(tool))}
               </div>
             ) : (
               <div className="empty-state">
